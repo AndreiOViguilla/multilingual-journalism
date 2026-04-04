@@ -1,6 +1,38 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
+
+const API_URL = 'https://newspublish-backend.onrender.com'
 
 const STEPS = ['Write', 'Translate', 'Review', 'Publish']
+
+function EditableBlock({ index, initialHtml, onUpdate, onFocus, onFormatCheck }) {
+  const ref = useRef(null)
+  const initialized = useRef(false)
+
+  useEffect(() => {
+    if (ref.current && !initialized.current && initialHtml) {
+      ref.current.innerHTML = initialHtml
+      initialized.current = true
+    }
+  }, [])
+
+  return (
+    <div
+      ref={ref}
+      data-block={index}
+      contentEditable
+      suppressContentEditableWarning
+      onFocus={onFocus}
+      onInput={() => {
+        if (ref.current) onUpdate(index, ref.current.innerHTML)
+      }}
+      onKeyUp={onFormatCheck}
+      onMouseUp={onFormatCheck}
+      onSelect={onFormatCheck}
+      style={{ minHeight: '80px', fontSize: '13px', color: '#333', lineHeight: '1.6', outline: 'none', borderBottom: '1px solid #f0f0f0', paddingBottom: '8px', paddingRight: '50px', fontFamily: 'Arial, sans-serif' }}
+      data-placeholder="Write a paragraph..."
+    />
+  )
+}
 
 const styles = {
   body: { background: '#f5faf5', minHeight: '100vh', padding: '20px', fontFamily: 'Arial, sans-serif', overflowX: 'hidden' },
@@ -50,18 +82,28 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState('')
 
   const [active, setActive] = useState(0)
+  const [view, setView] = useState('writer') // 'writer' | 'history' | 'article'
+  const [historyList, setHistoryList] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [selectedArticle, setSelectedArticle] = useState(null)
+  const [editingId, setEditingId] = useState(null)
   const [title, setTitle] = useState('')
+  const [subtitle, setSubtitle] = useState('')
+  const [articleDate, setArticleDate] = useState(new Date().toISOString().split('T')[0])
   const [filipino, setFilipino] = useState('')
+  const [translatedTitle, setTranslatedTitle] = useState('')
+  const [translatedSubtitle, setTranslatedSubtitle] = useState('')
   const [toast, setToast] = useState(null)
   const [targetLang, setTargetLang] = useState('tl')
   const [targetLangName, setTargetLangName] = useState('Filipino')
-  const [blocks, setBlocks] = useState([{ type: 'text', html: '', url: '' }])
+  const [blocks, setBlocks] = useState([{ id: 1, type: 'text', html: '', url: '' }])
+  const blockIdCounter = useRef(2)
   const [activeBlock, setActiveBlock] = useState(null)
   const [isBold, setIsBold] = useState(false)
   const [isItalic, setIsItalic] = useState(false)
   const [isList, setIsList] = useState(false)
   const [isFilipinoBold, setIsFilipinoBold] = useState(false)
-  const [isfilipinoItalic, setIsFilipanoItalic] = useState(false)
+  const [isfilipinoItalic, setIsFilipinoItalic] = useState(false)
   const [activeEditor, setActiveEditor] = useState('english')
 
   function checkFormat() {
@@ -72,11 +114,12 @@ export default function App() {
 
   function checkFilipinoFormat() {
     setIsFilipinoBold(document.queryCommandState('bold'))
-    setIsFilipanoItalic(document.queryCommandState('italic'))
+    setIsFilipinoItalic(document.queryCommandState('italic'))
   }
 
   function addBlock(type) {
-    setBlocks(prev => [...prev, { type, html: '', url: '' }])
+    const id = blockIdCounter.current++
+    setBlocks(prev => [...prev, { id, type, html: '', url: '' }])
   }
 
   function updateBlock(i, html) {
@@ -91,6 +134,18 @@ export default function App() {
     setBlocks(prev => prev.filter((_, j) => j !== i))
   }
 
+  function moveBlock(i, dir) {
+    setBlocks(prev => {
+      const newIndex = i + dir
+      if (newIndex < 0 || newIndex >= prev.length) return prev
+      const u = [...prev]
+      const temp = u[i]
+      u[i] = u[newIndex]
+      u[newIndex] = temp
+      return u
+    })
+  }
+
   function applyFormat(cmd) {
     document.execCommand(cmd, false, null)
     checkFormat()
@@ -103,6 +158,49 @@ export default function App() {
   function applyBullet() {
     document.execCommand('insertUnorderedList', false, null)
     checkFormat()
+    if (activeBlock !== null) {
+      const el = document.querySelector(`[data-block="${activeBlock}"]`)
+      if (el) updateBlock(activeBlock, el.innerHTML)
+    }
+  }
+
+  function applyNoTranslate() {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
+    const range = sel.getRangeAt(0)
+
+    const span = document.createElement('span')
+    span.className = 'no-translate'
+    span.setAttribute('data-nt', '1')
+    try {
+      span.appendChild(range.extractContents())
+      range.insertNode(span)
+    } catch (e) {
+      return
+    }
+    sel.removeAllRanges()
+
+    if (activeBlock !== null) {
+      const el = document.querySelector(`[data-block="${activeBlock}"]`)
+      if (el) updateBlock(activeBlock, el.innerHTML)
+    }
+  }
+
+  function removeNoTranslate() {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return
+    const range = sel.getRangeAt(0)
+
+    let node = range.commonAncestorContainer
+    while (node && node.nodeType === 3) node = node.parentNode
+    const existing = node && node.closest ? node.closest('span.no-translate') : null
+    if (!existing) return
+
+    const parent = existing.parentNode
+    while (existing.firstChild) parent.insertBefore(existing.firstChild, existing)
+    parent.removeChild(existing)
+    sel.removeAllRanges()
+
     if (activeBlock !== null) {
       const el = document.querySelector(`[data-block="${activeBlock}"]`)
       if (el) updateBlock(activeBlock, el.innerHTML)
@@ -126,6 +224,11 @@ export default function App() {
     }
   }
 
+  function freshBlock() {
+    const id = blockIdCounter.current++
+    return { id, type: 'text', html: '', url: '' }
+  }
+
   function signOut() {
     setLoggedIn(false)
     setEmail('')
@@ -133,55 +236,242 @@ export default function App() {
     setLoginEmail('')
     setActive(0)
     setTitle('')
+    setSubtitle('')
+    setArticleDate(new Date().toISOString().split('T')[0])
     setFilipino('')
+    setTranslatedTitle('')
+    setTranslatedSubtitle('')
     setToast(null)
-    setBlocks([{ type: 'text', html: '', url: '' }])
+    setBlocks([freshBlock()])
+    setView('writer')
+    setHistoryList([])
+    setSelectedArticle(null)
+    setEditingId(null)
   }
 
   async function translate() {
     const textBlocks = blocks.filter(b => b.type === 'text')
     if (!textBlocks.some(b => getTextFromHtml(b.html).trim())) return
     setActive(1)
-    try {
-      const combinedHtml = textBlocks.map(b => `<div>${b.html}</div>`).join('')
-      const res = await fetch('https://translator-backend-0lo3.onrender.com/translate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: '', html: combinedHtml, target: targetLang })
+
+    // Extract no-translate spans, replace with placeholders like __NT0__
+    function protect(html) {
+      const protected_items = []
+      const div = document.createElement('div')
+      div.innerHTML = html
+      const spans = div.querySelectorAll('span.no-translate')
+      spans.forEach((span, idx) => {
+        protected_items.push(span.innerHTML)
+        const placeholder = document.createTextNode(`__NT${idx}__`)
+        span.parentNode.replaceChild(placeholder, span)
       })
-      const data = await res.json()
-      setFilipino(data.translated)
+      return { html: div.innerHTML, items: protected_items }
+    }
+
+    function restore(translatedHtml, items) {
+      let result = translatedHtml
+      items.forEach((original, idx) => {
+        // Match placeholders even if the translator altered spacing/case
+        const re = new RegExp(`_+\\s*N\\s*T\\s*${idx}\\s*_+`, 'gi')
+        result = result.replace(re, `<span class="no-translate">${original}</span>`)
+      })
+      return result
+    }
+
+    try {
+      // Include all blocks — text gets translated, images pass through as <img> tags
+      const combinedHtml = blocks.map(b => {
+        if (b.type === 'text') {
+          return `<div>${b.html}</div>`
+        } else if (b.type === 'image' && b.url) {
+          return `<div><img src="${b.url}" alt="" /></div>`
+        }
+        return ''
+      }).join('')
+      const protectedBody = protect(combinedHtml)
+      const protectedTitle = title.trim() ? protect(title) : null
+      const protectedSubtitle = subtitle.trim() ? protect(subtitle) : null
+
+      const fetches = [
+        fetch('https://translator-backend-0lo3.onrender.com/translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: '', html: protectedBody.html, target: targetLang })
+        })
+      ]
+      if (protectedTitle) {
+        fetches.push(fetch('https://translator-backend-0lo3.onrender.com/translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: protectedTitle.html, target: targetLang })
+        }))
+      }
+      if (protectedSubtitle) {
+        fetches.push(fetch('https://translator-backend-0lo3.onrender.com/translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: protectedSubtitle.html, target: targetLang })
+        }))
+      }
+      const results = await Promise.all(fetches)
+      const dataBody = await results[0].json()
+      setFilipino(restore(dataBody.translated, protectedBody.items))
+      if (protectedTitle && results[1]) {
+        const dataTitle = await results[1].json()
+        setTranslatedTitle(restore(dataTitle.translated || title, protectedTitle.items))
+      } else {
+        setTranslatedTitle('')
+      }
+      if (protectedSubtitle) {
+        const idx = protectedTitle ? 2 : 1
+        if (results[idx]) {
+          const dataSub = await results[idx].json()
+          setTranslatedSubtitle(restore(dataSub.translated || subtitle, protectedSubtitle.items))
+        }
+      } else {
+        setTranslatedSubtitle('')
+      }
     } catch (e) {
       setFilipino('Translation failed. Please type it manually.')
+      setTranslatedTitle(title)
+      setTranslatedSubtitle(subtitle)
     }
     setActive(2)
   }
 
-  function approve() {
+  async function approve() {
     setActive(3)
     setToast('pub')
+    // Save to MongoDB via backend
+    const payload = {
+      title,
+      subtitle,
+      article_date: articleDate,
+      blocks: blocks.map(b => ({ type: b.type, html: b.html || '', url: b.url || '' })),
+      translated_title: translatedTitle,
+      translated_subtitle: translatedSubtitle,
+      translated_html: filipino,
+      target_lang: targetLang,
+      target_lang_name: targetLangName,
+      author_email: loginEmail
+    }
+    try {
+      if (editingId) {
+        // Update existing — delete old and create new (simpler than PATCH)
+        await fetch(`${API_URL}/articles/${editingId}`, { method: 'DELETE' })
+      }
+      const res = await fetch(`${API_URL}/articles`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      if (!res.ok) console.warn('Failed to save article:', res.status)
+      setEditingId(null)
+    } catch (err) {
+      console.warn('Failed to save article:', err)
+    }
+  }
+
+  async function loadHistory() {
+    setHistoryLoading(true)
+    try {
+      const res = await fetch(`${API_URL}/articles?limit=50`)
+      const data = await res.json()
+      setHistoryList(data.articles || [])
+    } catch (err) {
+      console.warn('Failed to load history:', err)
+      setHistoryList([])
+    }
+    setHistoryLoading(false)
+  }
+
+  async function openArticle(id) {
+    try {
+      const res = await fetch(`${API_URL}/articles/${id}`)
+      const data = await res.json()
+      setSelectedArticle(data)
+      setView('article')
+    } catch (err) {
+      console.warn('Failed to load article:', err)
+    }
+  }
+
+  async function deleteArticle(id) {
+    if (!confirm('Delete this article? This cannot be undone.')) return
+    try {
+      await fetch(`${API_URL}/articles/${id}`, { method: 'DELETE' })
+      setHistoryList(prev => prev.filter(a => a.id !== id))
+      if (selectedArticle && selectedArticle.id === id) {
+        setSelectedArticle(null)
+        setView('history')
+      }
+    } catch (err) {
+      console.warn('Failed to delete:', err)
+    }
+  }
+
+  function editArticle(article) {
+    // Load the article back into the Write tab for editing
+    setTitle(article.title || '')
+    setSubtitle(article.subtitle || '')
+    setArticleDate(article.article_date || new Date().toISOString().split('T')[0])
+    setTargetLang(article.target_lang || 'tl')
+    setTargetLangName(article.target_lang_name || 'Filipino')
+    setFilipino(article.translated_html || '')
+    setTranslatedTitle(article.translated_title || '')
+    setTranslatedSubtitle(article.translated_subtitle || '')
+    // Reload blocks with fresh IDs so EditableBlock re-mounts with new content
+    const restoredBlocks = (article.blocks || []).map(b => ({
+      id: blockIdCounter.current++,
+      type: b.type,
+      html: b.html || '',
+      url: b.url || ''
+    }))
+    setBlocks(restoredBlocks.length > 0 ? restoredBlocks : [freshBlock()])
+    setEditingId(article.id)
+    setActive(0)
+    setView('writer')
+    setSelectedArticle(null)
+    setToast(null)
+  }
+
+  function goToHistory() {
+    setView('history')
+    loadHistory()
   }
 
   function reject() {
     setActive(0)
     setTitle('')
+    setSubtitle('')
+    setArticleDate(new Date().toISOString().split('T')[0])
     setFilipino('')
+    setTranslatedTitle('')
+    setTranslatedSubtitle('')
     setToast(null)
-    setBlocks([{ type: 'text', html: '', url: '' }])
+    setBlocks([freshBlock()])
+    setEditingId(null)
   }
 
   function goBack() {
     setActive(0)
     setFilipino('')
+    setTranslatedTitle('')
+    setTranslatedSubtitle('')
     setToast(null)
   }
 
   function publishAnother() {
     setActive(0)
     setTitle('')
+    setSubtitle('')
+    setArticleDate(new Date().toISOString().split('T')[0])
     setFilipino('')
+    setTranslatedTitle('')
+    setTranslatedSubtitle('')
     setToast(null)
-    setBlocks([{ type: 'text', html: '', url: '' }])
+    setBlocks([freshBlock()])
+    setEditingId(null)
   }
 
   if (!loggedIn) {
@@ -209,68 +499,115 @@ export default function App() {
 
   return (
     <div style={styles.body}>
+      {/* Global styles for list indentation — applies across all tabs */}
+      <style>{`
+        ul { padding-left: 20px; margin: 4px 0; }
+        li { margin: 2px 0; }
+        [contenteditable]:empty:before { content: attr(data-placeholder); color: #aaa; pointer-events: none; display: block; }
+        span.no-translate { background: #fff8d4; border-bottom: 1px dashed #c9a227; padding: 0 2px; border-radius: 2px; }
+        #filipino-editor img, .published-filipino img { width: 100%; border-radius: 6px; margin: 6px 0; display: block; }
+        @keyframes slide { 0% { transform: translateX(-100%) } 100% { transform: translateX(350%) } }
+      `}</style>
+
       <div style={styles.wrap}>
         <nav style={styles.nav}>
           <div style={styles.steps}>
-            {STEPS.map((s, i) => (
-              <span key={s}>
-                <span style={stepStyle(i, active)}>{s}</span>
-                {i < STEPS.length - 1 && <span style={styles.sep}> › </span>}
+            {view === 'writer' ? (
+              STEPS.map((s, i) => (
+                <span key={s}>
+                  <span style={stepStyle(i, active)}>{s}</span>
+                  {i < STEPS.length - 1 && <span style={styles.sep}> › </span>}
+                </span>
+              ))
+            ) : (
+              <span style={{ fontSize: '14px', fontWeight: '500', color: '#1a5c1a' }}>
+                {view === 'history' ? 'Published articles' : 'Article view'}
               </span>
-            ))}
+            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {view === 'writer' ? (
+              <span onClick={goToHistory} style={{ fontSize: '12px', color: '#2a7a2a', cursor: 'pointer', fontWeight: '500' }}>History</span>
+            ) : (
+              <span onClick={() => { setView('writer'); setSelectedArticle(null) }} style={{ fontSize: '12px', color: '#2a7a2a', cursor: 'pointer', fontWeight: '500' }}>+ New article</span>
+            )}
             <span style={styles.user}>Hello, Reporter {loginEmail.split('@')[0]}</span>
             <span style={styles.signout} onClick={signOut}>Sign out</span>
           </div>
         </nav>
 
+        {view === 'writer' && <>
+
         {active === 0 && (
           <div>
-            <div style={{ display: 'flex', gap: '4px', padding: '8px 12px', background: '#fff', border: '1px solid #d1e8d1', borderRadius: '10px', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', gap: '4px', padding: '8px 12px', background: '#fff', border: '1px solid #d1e8d1', borderRadius: '10px', marginBottom: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
               <button onMouseDown={e => { e.preventDefault(); applyFormat('bold') }} style={{ fontWeight: 'bold', fontSize: '12px', padding: '2px 10px', borderRadius: '4px', border: '1px solid #d1e8d1', background: isBold ? '#d1e8d1' : '#f9fdf9', cursor: 'pointer', color: '#333' }}>B</button>
               <button onMouseDown={e => { e.preventDefault(); applyFormat('italic') }} style={{ fontStyle: 'italic', fontSize: '12px', padding: '2px 10px', borderRadius: '4px', border: '1px solid #d1e8d1', background: isItalic ? '#d1e8d1' : '#f9fdf9', cursor: 'pointer', color: '#333' }}>I</button>
               <button onMouseDown={e => { e.preventDefault(); applyBullet() }} style={{ fontSize: '12px', padding: '2px 10px', borderRadius: '4px', border: '1px solid #d1e8d1', background: isList ? '#d1e8d1' : '#f9fdf9', cursor: 'pointer', color: '#333' }}>• List</button>
+              <span style={{ width: '1px', height: '16px', background: '#d1e8d1', margin: '0 4px' }} />
+              <button onMouseDown={e => { e.preventDefault(); applyNoTranslate() }} title="Highlight text and click to keep it untranslated (e.g. names, brands)" style={{ fontSize: '12px', padding: '2px 10px', borderRadius: '4px', border: '1px solid #e0c867', background: '#fff8d4', cursor: 'pointer', color: '#8a6a1a' }}>Don't translate</button>
+              <button onMouseDown={e => { e.preventDefault(); removeNoTranslate() }} title="Click inside a highlighted section to remove the highlight" style={{ fontSize: '12px', padding: '2px 10px', borderRadius: '4px', border: '1px solid #d1e8d1', background: '#f9fdf9', cursor: 'pointer', color: '#666' }}>Remove highlight</button>
             </div>
 
             <div style={styles.card}>
-              <div style={styles.label}>Write your article in English</div>
+              <div style={styles.label}>{editingId ? 'Editing article' : 'Write your article in English'}</div>
               <input
                 type="text"
-                style={{ ...styles.input, fontWeight: '500', fontSize: '15px', marginBottom: '12px' }}
-                placeholder="Article title..."
+                style={{ ...styles.input, fontWeight: '700', fontSize: '20px', marginBottom: '4px', border: 'none', borderBottom: '1px solid #f0f0f0', borderRadius: '0', paddingLeft: '0' }}
+                placeholder="Article headline..."
                 value={title}
                 onChange={e => setTitle(e.target.value)}
               />
+              <input
+                type="text"
+                style={{ ...styles.input, fontSize: '13px', color: '#666', marginBottom: '8px', border: 'none', borderBottom: '1px solid #f0f0f0', borderRadius: '0', paddingLeft: '0' }}
+                placeholder="Subheadline — a short summary of the article..."
+                value={subtitle}
+                onChange={e => setSubtitle(e.target.value)}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                <span style={{ fontSize: '11px', color: '#888' }}>Date:</span>
+                <input
+                  type="date"
+                  style={{ ...styles.input, width: 'auto', marginBottom: '0', fontSize: '12px', color: '#555' }}
+                  value={articleDate}
+                  onChange={e => setArticleDate(e.target.value)}
+                />
+              </div>
               {blocks.map((block, i) => (
-                <div key={i} style={{ marginBottom: '10px', position: 'relative' }}>
-                  <span onClick={() => removeBlock(i)} style={{ position: 'absolute', right: '0', top: '0', fontSize: '11px', color: '#aaa', cursor: 'pointer', zIndex: 1 }}>remove</span>
-                  {block.type === 'text' ? (
-                    <div
-                      data-block={i}
-                      contentEditable
-                      suppressContentEditableWarning
-                      onFocus={() => { setActiveBlock(i); setActiveEditor('english'); checkFormat() }}
-                      onInput={e => updateBlock(i, e.currentTarget.innerHTML)}
-                      onKeyUp={checkFormat}
-                      onMouseUp={checkFormat}
-                      onSelect={checkFormat}
-                      style={{ minHeight: '80px', fontSize: '13px', color: '#333', lineHeight: '1.6', outline: 'none', borderBottom: '1px solid #f0f0f0', paddingBottom: '8px', paddingRight: '50px', fontFamily: 'Arial, sans-serif' }}
-                      data-placeholder="Write a paragraph..."
-                    />
-                  ) : (
-                    <div style={{ paddingRight: '50px' }}>
-                      <input type="text" style={{ ...styles.input, marginBottom: '4px' }} placeholder="Paste image URL..." value={block.url || ''} onChange={e => updateImageUrl(i, e.target.value)} />
-                      {block.url && <img src={block.url} alt="" style={{ width: '100%', borderRadius: '6px', marginTop: '4px' }} />}
-                    </div>
-                  )}
+                <div key={block.id} style={{ marginBottom: '10px', position: 'relative', display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingTop: '2px' }}>
+                    <button
+                      onClick={() => moveBlock(i, -1)}
+                      disabled={i === 0}
+                      style={{ width: '22px', height: '22px', fontSize: '10px', border: '1px solid #d1e8d1', borderRadius: '4px', background: i === 0 ? '#f5f5f5' : '#fff', color: i === 0 ? '#ccc' : '#2a7a2a', cursor: i === 0 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                    >▲</button>
+                    <button
+                      onClick={() => moveBlock(i, 1)}
+                      disabled={i === blocks.length - 1}
+                      style={{ width: '22px', height: '22px', fontSize: '10px', border: '1px solid #d1e8d1', borderRadius: '4px', background: i === blocks.length - 1 ? '#f5f5f5' : '#fff', color: i === blocks.length - 1 ? '#ccc' : '#2a7a2a', cursor: i === blocks.length - 1 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                    >▼</button>
+                  </div>
+                  <div style={{ flex: 1, position: 'relative' }}>
+                    <span onClick={() => removeBlock(i)} style={{ position: 'absolute', right: '0', top: '0', fontSize: '11px', color: '#aaa', cursor: 'pointer', zIndex: 1 }}>remove</span>
+                    {block.type === 'text' ? (
+                      <EditableBlock
+                        key={block.id}
+                        index={i}
+                        initialHtml={block.html}
+                        onUpdate={updateBlock}
+                        onFocus={() => { setActiveBlock(i); setActiveEditor('english'); checkFormat() }}
+                        onFormatCheck={checkFormat}
+                      />
+                    ) : (
+                      <div style={{ paddingRight: '50px' }}>
+                        <input type="text" style={{ ...styles.input, marginBottom: '4px' }} placeholder="Paste image URL..." value={block.url || ''} onChange={e => updateImageUrl(i, e.target.value)} />
+                        {block.url && <img src={block.url} alt="" style={{ width: '100%', borderRadius: '6px', marginTop: '4px' }} />}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
-              <style>{`
-                [contenteditable]:empty:before { content: attr(data-placeholder); color: #aaa; pointer-events: none; display: block; }
-                [contenteditable] ul { padding-left: 20px; margin: 0; }
-                [contenteditable] li { margin: 2px 0; }
-              `}</style>
               <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                 <button onClick={() => addBlock('text')} style={{ fontSize: '12px', padding: '4px 12px', borderRadius: '6px', border: '1px solid #d1e8d1', background: '#fff', cursor: 'pointer', color: '#2a7a2a' }}>+ Paragraph</button>
                 <button onClick={() => addBlock('image')} style={{ fontSize: '12px', padding: '4px 12px', borderRadius: '6px', border: '1px solid #d1e8d1', background: '#fff', cursor: 'pointer', color: '#2a7a2a' }}>+ Image</button>
@@ -301,7 +638,6 @@ export default function App() {
               If it takes too long, the backend may be waking up.{' '}
               <a href="https://translator-backend-0lo3.onrender.com" target="_blank" rel="noreferrer" style={{ color: '#2a7a2a' }}>Click here to wake it up</a>, then come back.
             </div>
-            <style>{`@keyframes slide { 0% { transform: translateX(-100%) } 100% { transform: translateX(350%) } }`}</style>
           </div>
         )}
 
@@ -312,7 +648,7 @@ export default function App() {
             <div style={{ display: 'flex', gap: '4px', padding: '8px 12px', background: '#fff', border: '1px solid #d1e8d1', borderRadius: '10px', marginBottom: '8px' }}>
               <span style={{ fontSize: '11px', color: '#aaa', marginRight: '8px', lineHeight: '26px' }}>Filipino formatting:</span>
               <button onMouseDown={e => { e.preventDefault(); applyFilipinoFormat('bold') }} style={{ fontWeight: 'bold', fontSize: '12px', padding: '2px 10px', borderRadius: '4px', border: '1px solid #d1e8d1', background: isFilipinoBold ? '#d1e8d1' : '#f9fdf9', cursor: 'pointer', color: '#333' }}>B</button>
-              <button onMouseDown={e => { e.preventDefault(); applyFilipinoFormat('italic') }} style={{ fontStyle: 'italic', fontSize: '12px', padding: '2px 10px', borderRadius: '4px', border: '1px solid #d1e8d1', background: isfilipanoItalic ? '#d1e8d1' : '#f9fdf9', cursor: 'pointer', color: '#333' }}>I</button>
+              <button onMouseDown={e => { e.preventDefault(); applyFilipinoFormat('italic') }} style={{ fontStyle: 'italic', fontSize: '12px', padding: '2px 10px', borderRadius: '4px', border: '1px solid #d1e8d1', background: isfilipinoItalic ? '#d1e8d1' : '#f9fdf9', cursor: 'pointer', color: '#333' }}>I</button>
             </div>
 
             <div style={styles.cols}>
@@ -321,7 +657,9 @@ export default function App() {
                   <div style={styles.label}>English</div>
                 </div>
                 <div style={{ padding: '10px 14px', maxHeight: '360px', overflowY: 'auto' }}>
-                  {title && <p style={{ fontWeight: '500', fontSize: '14px', marginBottom: '8px', color: '#333' }}>{title}</p>}
+                  {title && <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>{title}</h2>}
+                  {subtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{subtitle}</p>}
+                  {articleDate && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(articleDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
                   {blocks.map((block, i) => (
                     <div key={i} style={{ marginBottom: '10px' }}>
                       {block.type === 'text'
@@ -337,6 +675,9 @@ export default function App() {
                   <div style={styles.label}>{targetLangName} — edit if needed</div>
                 </div>
                 <div style={{ padding: '10px 14px', maxHeight: '360px', overflowY: 'auto' }}>
+                  {translatedTitle && <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>{translatedTitle}</h2>}
+                  {translatedSubtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{translatedSubtitle}</p>}
+                  {articleDate && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(articleDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
                   <div
                     id="filipino-editor"
                     contentEditable
@@ -346,7 +687,7 @@ export default function App() {
                     onKeyUp={checkFilipinoFormat}
                     onMouseUp={checkFilipinoFormat}
                     onSelect={checkFilipinoFormat}
-                    style={{ minHeight: '340px', fontSize: '13px', color: '#333', lineHeight: '1.6', outline: 'none', fontFamily: 'Arial, sans-serif' }}
+                    style={{ minHeight: '200px', fontSize: '13px', color: '#333', lineHeight: '1.6', outline: 'none', fontFamily: 'Arial, sans-serif' }}
                     dangerouslySetInnerHTML={{ __html: filipino }}
                   />
                 </div>
@@ -366,7 +707,9 @@ export default function App() {
               <div style={styles.cols}>
                 <div style={styles.card}>
                   <div style={styles.label}>English</div>
-                  {title && <p style={{ fontWeight: '500', fontSize: '14px', marginBottom: '8px', color: '#333' }}>{title}</p>}
+                  {title && <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>{title}</h2>}
+                  {subtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{subtitle}</p>}
+                  {articleDate && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(articleDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
                   {blocks.map((block, i) => (
                     <div key={i} style={{ marginBottom: '10px' }}>
                       {block.type === 'text'
@@ -378,13 +721,82 @@ export default function App() {
                 </div>
                 <div style={styles.card}>
                   <div style={styles.label}>{targetLangName}</div>
-                  <div style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }} dangerouslySetInnerHTML={{ __html: filipino }} />
+                  {translatedTitle && <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>{translatedTitle}</h2>}
+                  {translatedSubtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{translatedSubtitle}</p>}
+                  {articleDate && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(articleDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
+                  <div className="published-filipino" style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }} dangerouslySetInnerHTML={{ __html: filipino }} />
                 </div>
               </div>
             </div>
-            {toast === 'pub' && <div style={styles.toastPub}>Published in English and {targetLangName}.</div>}
+            {toast === 'pub' && <div style={styles.toastPub}>{editingId ? 'Article updated' : 'Published'} in English and {targetLangName}.</div>}
             <div style={styles.actions}>
               <button style={{ ...styles.btnOutline, marginTop: '12px' }} onClick={publishAnother}>Publish another article</button>
+            </div>
+          </div>
+        )}
+
+        </>}
+
+        {view === 'history' && (
+          <div>
+            {historyLoading && <div style={{ textAlign: 'center', padding: '30px', color: '#2a7a2a', fontSize: '13px' }}>Loading articles...</div>}
+            {!historyLoading && historyList.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: '#888', fontSize: '13px', border: '1px solid #d1e8d1', borderRadius: '10px', background: '#fff' }}>
+                No published articles yet.
+              </div>
+            )}
+            {!historyLoading && historyList.map(a => (
+              <div key={a.id} style={{ border: '1px solid #d1e8d1', borderRadius: '10px', padding: '14px', background: '#fff', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => openArticle(a.id)}>
+                  <div style={{ fontWeight: '600', fontSize: '15px', color: '#333', marginBottom: '4px' }}>{a.title || '(untitled)'}</div>
+                  {a.subtitle && <div style={{ fontSize: '12px', color: '#666', marginBottom: '6px', lineHeight: '1.4' }}>{a.subtitle}</div>}
+                  <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: '#999' }}>
+                    <span>{new Date(a.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                    <span>·</span>
+                    <span>{a.target_lang_name}</span>
+                    {a.author_email && <><span>·</span><span>{a.author_email}</span></>}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <button onClick={() => openArticle(a.id)} style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '4px', border: '1px solid #d1e8d1', background: '#fff', cursor: 'pointer', color: '#2a7a2a' }}>View</button>
+                  <button onClick={() => deleteArticle(a.id)} style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '4px', border: '1px solid #f5d0d0', background: '#fff', cursor: 'pointer', color: '#b00' }}>Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {view === 'article' && selectedArticle && (
+          <div>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+              <span onClick={() => { setView('history'); setSelectedArticle(null) }} style={styles.back}>← Back to History</span>
+            </div>
+            <div style={styles.cols}>
+              <div style={styles.card}>
+                <div style={styles.label}>English</div>
+                {selectedArticle.title && <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>{selectedArticle.title}</h2>}
+                {selectedArticle.subtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{selectedArticle.subtitle}</p>}
+                {selectedArticle.article_date && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(selectedArticle.article_date + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
+                {(selectedArticle.blocks || []).map((block, i) => (
+                  <div key={i} style={{ marginBottom: '10px' }}>
+                    {block.type === 'text'
+                      ? <div style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }} dangerouslySetInnerHTML={{ __html: block.html }} />
+                      : block.url && <img src={block.url} alt="" style={{ width: '100%', borderRadius: '6px' }} />
+                    }
+                  </div>
+                ))}
+              </div>
+              <div style={styles.card}>
+                <div style={styles.label}>{selectedArticle.target_lang_name}</div>
+                {selectedArticle.translated_title && <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>{selectedArticle.translated_title}</h2>}
+                {selectedArticle.translated_subtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{selectedArticle.translated_subtitle}</p>}
+                {selectedArticle.article_date && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(selectedArticle.article_date + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
+                <div className="published-filipino" style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }} dangerouslySetInnerHTML={{ __html: selectedArticle.translated_html || '' }} />
+              </div>
+            </div>
+            <div style={styles.actions}>
+              <button style={styles.btnGreen} onClick={() => editArticle(selectedArticle)}>Edit article</button>
+              <button style={{ ...styles.btnOutline, borderColor: '#b00', color: '#b00' }} onClick={() => deleteArticle(selectedArticle.id)}>Delete article</button>
             </div>
           </div>
         )}
