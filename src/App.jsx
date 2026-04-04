@@ -73,27 +73,13 @@ export default function App() {
     if (!english.trim()) return
     setActive(1)
     try {
-      const sentences = english.match(/[^.!?]+[.!?]+/g) || [english]
-      let chunks = []
-      let current = ''
-      for (const sentence of sentences) {
-        if ((current + sentence).length > 450) {
-          if (current) chunks.push(current.trim())
-          current = sentence
-        } else {
-          current += sentence
-        }
-      }
-      if (current) chunks.push(current.trim())
-
-      const translated = await Promise.all(
-        chunks.map(async chunk => {
-          const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=en|tl`)
-          const data = await res.json()
-          return data.responseData.translatedText
-        })
-      )
-      setFilipino(translated.join(' '))
+      const res = await fetch('https://translator-backend-0lo3.onrender.com/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: english, target: 'tl' })
+      })
+      const data = await res.json()
+      setFilipino(data.translated)
     } catch (e) {
       setFilipino('Translation failed. Please type it manually.')
     }
