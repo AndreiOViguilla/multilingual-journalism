@@ -47,6 +47,8 @@ export default function App() {
   const [english, setEnglish] = useState('')
   const [filipino, setFilipino] = useState('')
   const [toast, setToast] = useState(null)
+  const [targetLang, setTargetLang] = useState('tl')
+  const [targetLangName, setTargetLangName] = useState('Filipino')
 
   function login() {
     if (email.trim() && password.trim()) {
@@ -76,7 +78,7 @@ export default function App() {
       const res = await fetch('https://translator-backend-0lo3.onrender.com/translate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: english, target: 'tl' })
+        body: JSON.stringify({ text: english, target: targetLang })
       })
       const data = await res.json()
       setFilipino(data.translated)
@@ -179,9 +181,22 @@ export default function App() {
                 onChange={e => setEnglish(e.target.value)}
               />
             </div>
-            <div style={styles.actions}>
-              <button style={styles.btnGreen} onClick={translate} disabled={!english.trim()}>
-                Translate to Filipino
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
+              <select
+                style={{ ...styles.input, width: '50%', cursor: 'pointer', marginBottom: '0' }}
+                value={targetLang}
+                onChange={e => {
+                  setTargetLang(e.target.value)
+                  setTargetLangName(e.target.options[e.target.selectedIndex].text)
+                }}
+              >
+                <option value="tl">Filipino</option>
+                <option value="ceb">Cebuano</option>
+                <option value="ilo">Ilocano</option>
+                <option value="hil">Hiligaynon</option>
+              </select>
+              <button style={{ ...styles.btnGreen, width: '50%' }} onClick={translate} disabled={!english.trim()}>
+                Translate to {targetLangName}
               </button>
             </div>
           </div>
@@ -205,7 +220,7 @@ export default function App() {
               </div>
               <div style={{ border: '1px solid #d1e8d1', borderRadius: '10px', background: '#fff', marginBottom: '14px' }}>
                 <div style={{ padding: '10px 14px 6px', borderBottom: '1px solid #f0f0f0' }}>
-                  <div style={styles.label}>Filipino — edit if needed</div>
+                  <div style={styles.label}>{targetLangName} — edit if needed</div>
                 </div>
                 <div style={{ padding: '10px 14px', maxHeight: '360px', overflowY: 'auto' }}>
                   <textarea
