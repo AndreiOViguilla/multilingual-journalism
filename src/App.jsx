@@ -3,13 +3,13 @@ import { useState } from 'react'
 const STEPS = ['Write', 'Translate', 'Review', 'Publish']
 
 const styles = {
-  body: { background: '#f5faf5', minHeight: '100vh', padding: '20px', fontFamily: 'Arial, sans-serif', overflow: 'hidden' },
+  body: { background: '#f5faf5', minHeight: '100vh', padding: '20px', fontFamily: 'Arial, sans-serif', overflowX: 'hidden' },
   wrap: { maxWidth: '800px', margin: '0 auto' },
   nav: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', border: '1px solid #d1e8d1', borderRadius: '10px', marginBottom: '16px', background: '#fff' },
   steps: { display: 'flex', alignItems: 'center', gap: '6px' },
   sep: { color: '#ccc', fontSize: '12px' },
   user: { fontSize: '12px', color: '#888' },
-  card: { border: '1px solid #d1e8d1', borderRadius: '10px', padding: '14px', background: '#fff', marginBottom: '14px' },
+  card: { border: '1px solid #d1e8d1', borderRadius: '10px', padding: '14px', background: '#fff', marginBottom: '14px', maxHeight: '400px', overflowY: 'auto' },
   label: { fontSize: '11px', color: '#2a7a2a', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' },
   text: { fontSize: '13px', color: '#333', lineHeight: '1.6' },
   textarea: { width: '100%', fontSize: '13px', color: '#333', border: 'none', outline: 'none', resize: 'none', lineHeight: '1.6', background: 'transparent', fontFamily: 'Arial, sans-serif' },
@@ -73,9 +73,27 @@ export default function App() {
     if (!english.trim()) return
     setActive(1)
     try {
-      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(english)}&langpair=en|tl`)
-      const data = await res.json()
-      setFilipino(data.responseData.translatedText)
+      const sentences = english.match(/[^.!?]+[.!?]+/g) || [english]
+      let chunks = []
+      let current = ''
+      for (const sentence of sentences) {
+        if ((current + sentence).length > 450) {
+          if (current) chunks.push(current.trim())
+          current = sentence
+        } else {
+          current += sentence
+        }
+      }
+      if (current) chunks.push(current.trim())
+
+      const translated = await Promise.all(
+        chunks.map(async chunk => {
+          const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=en|tl`)
+          const data = await res.json()
+          return data.responseData.translatedText
+        })
+      )
+      setFilipino(translated.join(' '))
     } catch (e) {
       setFilipino('Translation failed. Please type it manually.')
     }
@@ -191,18 +209,25 @@ export default function App() {
           <div>
             <span style={styles.back} onClick={goBack}>Back to Write</span>
             <div style={styles.cols}>
-              <div style={styles.card}>
-                <div style={styles.label}>English</div>
-                <p style={styles.text}>{english}</p>
+              <div style={{ border: '1px solid #d1e8d1', borderRadius: '10px', background: '#fff', marginBottom: '14px' }}>
+                <div style={{ padding: '10px 14px 6px', borderBottom: '1px solid #f0f0f0' }}>
+                  <div style={styles.label}>English</div>
+                </div>
+                <div style={{ padding: '10px 14px', maxHeight: '360px', overflowY: 'auto' }}>
+                  <p style={styles.text}>{english}</p>
+                </div>
               </div>
-              <div style={styles.card}>
-                <div style={styles.label}>Filipino — edit if needed</div>
-                <textarea
-                  style={styles.textarea}
-                  rows={8}
-                  value={filipino}
-                  onChange={e => setFilipino(e.target.value)}
-                />
+              <div style={{ border: '1px solid #d1e8d1', borderRadius: '10px', background: '#fff', marginBottom: '14px' }}>
+                <div style={{ padding: '10px 14px 6px', borderBottom: '1px solid #f0f0f0' }}>
+                  <div style={styles.label}>Filipino — edit if needed</div>
+                </div>
+                <div style={{ padding: '10px 14px', maxHeight: '360px', overflowY: 'auto' }}>
+                  <textarea
+                    style={{ ...styles.textarea, height: '340px', display: 'block' }}
+                    value={filipino}
+                    onChange={e => setFilipino(e.target.value)}
+                  />
+                </div>
               </div>
             </div>
             <div style={styles.actions}>
