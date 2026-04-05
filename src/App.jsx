@@ -168,6 +168,22 @@ export default function App() {
   targetLangName
 ])
 
+function hasUnsavedChanges() {
+  const hasTextBlocks = blocks.some(b =>
+    b.type === 'text' && b.html && b.html.replace(/<[^>]*>/g, '').trim()
+  )
+
+  const hasMedia = blocks.some(b =>
+    (b.type === 'image' || b.type === 'video') && b.url
+  )
+
+  return (
+    title.trim() ||
+    subtitle.trim() ||
+    hasTextBlocks ||
+    hasMedia
+  )
+}
 useEffect(() => {
   const saved = localStorage.getItem('news_draft')
   if (!saved) return
@@ -307,6 +323,11 @@ useEffect(() => {
   }
 
   function signOut() {
+    if (hasUnsavedChanges()) {
+      const ok = confirm("You have unsaved work. Signing out will discard it. Continue?")
+      if (!ok) return
+    }
+
     setLoggedIn(false)
     setEmail('')
     setPassword('')
@@ -566,6 +587,11 @@ useEffect(() => {
   }
 
   function reject() {
+    if (hasUnsavedChanges()) {
+      const ok = confirm("You have unsaved changes. Discard this article?")
+      if (!ok) return
+    }
+
     setActive(0)
     setTitle('')
     setSubtitle('')
