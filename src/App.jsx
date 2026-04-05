@@ -60,6 +60,8 @@ const styles = {
   hint: { fontSize: '11px', color: '#aaa', textAlign: 'center', marginTop: '12px' },
   back: { fontSize: '12px', color: '#2a7a2a', cursor: 'pointer', marginBottom: '12px', display: 'inline-block' },
   signout: { fontSize: '12px', color: '#b00', cursor: 'pointer' },
+  wordCount: { fontSize: '11px', color: '#aaa', fontFamily: 'Arial, sans-serif' },
+  wordCountBlock: { fontSize: '11px', color: '#aaa', textAlign: 'right', marginTop: '12px', paddingTop: '6px', borderTop: '1px solid #f0f0f0', fontFamily: 'Arial, sans-serif' },
 }
 
 function stepStyle(i, active) {
@@ -72,6 +74,33 @@ function getTextFromHtml(html) {
   const div = document.createElement('div')
   div.innerHTML = html
   return div.innerText || div.textContent || ''
+}
+
+function countWordsAndChars(text) {
+  const trimmed = text.trim()
+  const words = trimmed ? trimmed.split(/\s+/).length : 0
+  const chars = trimmed.length
+  return { words, chars }
+}
+
+function getArticleStats(title, subtitle, blocks) {
+  const titleText = title || ''
+  const subtitleText = subtitle || ''
+  const blocksText = (blocks || [])
+    .filter(b => b.type === 'text')
+    .map(b => getTextFromHtml(b.html || ''))
+    .join(' ')
+  const combined = `${titleText} ${subtitleText} ${blocksText}`
+  return countWordsAndChars(combined)
+}
+
+function getTranslatedStats(translatedTitle, translatedSubtitle, translatedHtml) {
+  const combined = `${translatedTitle || ''} ${translatedSubtitle || ''} ${getTextFromHtml(translatedHtml || '')}`
+  return countWordsAndChars(combined)
+}
+
+function formatStats(s) {
+  return `${s.words.toLocaleString()} words · ${s.chars.toLocaleString()} characters`
 }
 
 export default function App() {
@@ -106,7 +135,59 @@ export default function App() {
   const [isfilipinoItalic, setIsFilipinoItalic] = useState(false)
   const [activeEditor, setActiveEditor] = useState('english')
   const [isPublishing, setIsPublishing] = useState(false)
+  const [publishError, setPublishError] = useState(false)
+  const [publishErrorMsg, setPublishErrorMsg] = useState('')
 
+  useEffect(() => {
+  const interval = setInterval(() => {
+    const draft = {
+      title,
+      subtitle,
+      articleDate,
+      blocks,
+      filipino,
+      translatedTitle,
+      translatedSubtitle,
+      targetLang,
+      targetLangName
+    }
+
+    localStorage.setItem('news_draft', JSON.stringify(draft))
+  }, 2000) // every 2 seconds
+
+  return () => clearInterval(interval)
+}, [
+  title,
+  subtitle,
+  articleDate,
+  blocks,
+  filipino,
+  translatedTitle,
+  translatedSubtitle,
+  targetLang,
+  targetLangName
+])
+
+useEffect(() => {
+  const saved = localStorage.getItem('news_draft')
+  if (!saved) return
+
+  try {
+    const draft = JSON.parse(saved)
+
+    setTitle(draft.title || '')
+    setSubtitle(draft.subtitle || '')
+    setArticleDate(draft.articleDate || new Date().toISOString().split('T')[0])
+    setBlocks(draft.blocks || [{ id: 1, type: 'text', html: '', url: '' }])
+    setFilipino(draft.filipino || '')
+    setTranslatedTitle(draft.translatedTitle || '')
+    setTranslatedSubtitle(draft.translatedSubtitle || '')
+    setTargetLang(draft.targetLang || 'tl')
+    setTargetLangName(draft.targetLangName || 'Filipino')
+  } catch (e) {
+    console.warn('Failed to load draft')
+  }
+}, [])
   function checkFormat() {
     setIsBold(document.queryCommandState('bold'))
     setIsItalic(document.queryCommandState('italic'))
@@ -243,6 +324,7 @@ export default function App() {
     setHistoryList([])
     setSelectedArticle(null)
     setEditingId(null)
+    setPublishError(false)
     setIsPublishing(false)
   }
 
@@ -273,10 +355,44 @@ export default function App() {
       return result
     }
 
+    function restoreVideos(html) {
+      return html.replace(
+        /<div data-video="(.*?)"><\/div>/g,
+        (_, url) => {
+          try {
+            const u = new URL(url)
+
+            if (u.hostname.includes("youtube.com")) {
+              const id = u.searchParams.get("v")
+              if (id) return `<iframe src="https://www.youtube.com/embed/${id}" style="width:100%;aspect-ratio:16/9;border-radius:6px;border:none;"></iframe>`
+            }
+
+            if (u.hostname === "youtu.be") {
+              const id = u.pathname.slice(1)
+              if (id) return `<iframe src="https://www.youtube.com/embed/${id}" style="width:100%;aspect-ratio:16/9;border-radius:6px;border:none;"></iframe>`
+            }
+
+            return ''
+          } catch {
+            return ''
+          }
+        }
+      )
+    }
     try {
       const combinedHtml = blocks.map(b => {
-        if (b.type === 'text') return `<div>${b.html}</div>`
-        else if (b.type === 'image' && b.url) return `<div><img src="${b.url}" alt="" /></div>`
+        if (b.type === 'text') {
+          return `<div>${b.html}</div>`
+        }
+
+        if (b.type === 'image' && b.url) {
+          return `<div><img src="${b.url}" /></div>`
+        }
+
+        if (b.type === 'video' && b.url) {
+          return `<div data-video="${b.url}"></div>`
+        }
+
         return ''
       }).join('')
       const protectedBody = protect(combinedHtml)
@@ -306,7 +422,11 @@ export default function App() {
       }
       const results = await Promise.all(fetches)
       const dataBody = await results[0].json()
-      setFilipino(restore(dataBody.translated, protectedBody.items))
+
+      const restored = restore(dataBody.translated, protectedBody.items)
+      const finalHtml = restoreVideos(restored)
+
+      setFilipino(finalHtml)
       if (protectedTitle && results[1]) {
         const dataTitle = await results[1].json()
         setTranslatedTitle(restore(dataTitle.translated || title, protectedTitle.items))
@@ -332,11 +452,12 @@ export default function App() {
 
   async function approve() {
     setIsPublishing(true)
+    setPublishError(false)
     const payload = {
       title,
       subtitle,
       article_date: articleDate,
-      blocks: blocks.map(b => ({ type: b.type, html: b.html || '', url: b.url || '' })),
+      blocks: blocks.map(b => ({ type: b.type === 'video' ? 'video' : b.type, html: b.html || '', url: b.url || '' })),
       translated_title: translatedTitle,
       translated_subtitle: translatedSubtitle,
       translated_html: filipino,
@@ -346,21 +467,36 @@ export default function App() {
     }
     try {
       if (editingId) {
-        await fetch(`${API_URL}/articles/${editingId}`, { method: 'DELETE' })
+        const delRes = await fetch(`${API_URL}/articles/${editingId}`, { method: 'DELETE' })
+        if (!delRes.ok) throw new Error(`Delete failed: ${delRes.status}`)
       }
       const res = await fetch(`${API_URL}/articles`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       })
-      if (!res.ok) console.warn('Failed to save article:', res.status)
+      if (!res.ok) {
+        let msg = 'Something went wrong.'
+        try {
+          const errData = await res.json()
+          if (errData.error) msg = errData.error
+        } catch (_) {}
+        throw new Error(msg)
+      }
+      const saved = await res.json()
+      if (!saved || (!saved.id && !saved._id)) {
+        throw new Error('Save returned no article ID')
+      }
       setEditingId(null)
+      setIsPublishing(false)
+      setActive(3)
+      setToast('pub')
+      localStorage.removeItem('news_draft')
     } catch (err) {
-      console.warn('Failed to save article:', err)
+      setIsPublishing(false)
+      setPublishError(true)
+      setPublishErrorMsg(err.message)
     }
-    setIsPublishing(false)
-    setActive(3)
-    setToast('pub')
   }
 
   async function loadHistory() {
@@ -440,6 +576,8 @@ export default function App() {
     setToast(null)
     setBlocks([freshBlock()])
     setEditingId(null)
+    setPublishError(false)
+    setPublishErrorMsg('')
   }
 
   function goBack() {
@@ -448,6 +586,8 @@ export default function App() {
     setTranslatedTitle('')
     setTranslatedSubtitle('')
     setToast(null)
+    setPublishError(false)
+    setPublishErrorMsg('')
   }
 
   function publishAnother() {
@@ -461,6 +601,8 @@ export default function App() {
     setToast(null)
     setBlocks([freshBlock()])
     setEditingId(null)
+    setPublishError(false)
+    setPublishErrorMsg('')
   }
 
   if (!loggedIn) {
@@ -485,6 +627,9 @@ export default function App() {
       </div>
     )
   }
+
+  const englishStats = getArticleStats(title, subtitle, blocks)
+  const translatedStats = getTranslatedStats(translatedTitle, translatedSubtitle, filipino)
 
   return (
     <div style={styles.body}>
@@ -581,6 +726,37 @@ export default function App() {
                         onFocus={() => { setActiveBlock(i); setActiveEditor('english'); checkFormat() }}
                         onFormatCheck={checkFormat}
                       />
+                    ) : block.type === 'video' ? (
+                      <div style={{ paddingRight: '50px' }}>
+                        <input type="text" style={{ ...styles.input, marginBottom: '4px' }} placeholder="Paste YouTube URL..." value={block.url || ''} onChange={e => updateImageUrl(i, e.target.value)} />
+                        {block.url && (
+                          <iframe
+                            src={(() => {
+                              try {
+                                const u = new URL(block.url)
+
+                                // Handle youtube.com
+                                if (u.hostname.includes("youtube.com")) {
+                                  const id = u.searchParams.get("v")
+                                  if (id) return `https://www.youtube.com/embed/${id}`
+                                }
+
+                                // Handle youtu.be short links
+                                if (u.hostname === "youtu.be") {
+                                  const id = u.pathname.slice(1)
+                                  if (id) return `https://www.youtube.com/embed/${id}`
+                                }
+
+                                return ""
+                              } catch {
+                                return ""
+                              }
+                            })()}
+                            style={{ width: '100%', aspectRatio: '16/9', borderRadius: '6px', marginTop: '4px', border: 'none' }}
+                            allowFullScreen
+                          />
+                        )}
+                      </div>
                     ) : (
                       <div style={{ paddingRight: '50px' }}>
                         <input type="text" style={{ ...styles.input, marginBottom: '4px' }} placeholder="Paste image URL..." value={block.url || ''} onChange={e => updateImageUrl(i, e.target.value)} />
@@ -590,9 +766,13 @@ export default function App() {
                   </div>
                 </div>
               ))}
-              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                <button onClick={() => addBlock('text')} style={{ fontSize: '12px', padding: '4px 12px', borderRadius: '6px', border: '1px solid #d1e8d1', background: '#fff', cursor: 'pointer', color: '#2a7a2a' }}>+ Paragraph</button>
-                <button onClick={() => addBlock('image')} style={{ fontSize: '12px', padding: '4px 12px', borderRadius: '6px', border: '1px solid #d1e8d1', background: '#fff', cursor: 'pointer', color: '#2a7a2a' }}>+ Image</button>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={() => addBlock('text')} style={{ fontSize: '12px', padding: '4px 12px', borderRadius: '6px', border: '1px solid #d1e8d1', background: '#fff', cursor: 'pointer', color: '#2a7a2a' }}>+ Paragraph</button>
+                  <button onClick={() => addBlock('image')} style={{ fontSize: '12px', padding: '4px 12px', borderRadius: '6px', border: '1px solid #d1e8d1', background: '#fff', cursor: 'pointer', color: '#2a7a2a' }}>+ Image</button>
+                  <button onClick={() => addBlock('video')} style={{ fontSize: '12px', padding: '4px 12px', borderRadius: '6px', border: '1px solid #d1e8d1', background: '#fff', cursor: 'pointer', color: '#2a7a2a' }}>+ Video</button>
+                </div>
+                <div style={styles.wordCount}>{formatStats(englishStats)}</div>
               </div>
             </div>
 
@@ -623,7 +803,7 @@ export default function App() {
           </div>
         )}
 
-        {active === 2 && (
+                {active === 2 && (
           <div>
             <span style={styles.back} onClick={goBack}>Back to Write</span>
 
@@ -634,29 +814,83 @@ export default function App() {
             </div>
 
             <div style={styles.cols}>
-              <div style={{ border: '1px solid #d1e8d1', borderRadius: '10px', background: '#fff', marginBottom: '14px' }}>
+              <div style={{ border: '1px solid #d1e8d1', borderRadius: '10px', background: '#fff', marginBottom: '14px', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ padding: '10px 14px 6px', borderBottom: '1px solid #f0f0f0' }}>
                   <div style={styles.label}>English</div>
                 </div>
-                <div style={{ padding: '10px 14px', maxHeight: '360px', overflowY: 'auto' }}>
+                <div style={{ padding: '10px 14px', maxHeight: '360px', overflowY: 'auto', flex: 1 }}>
                   {title && <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>{title}</h2>}
                   {subtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{subtitle}</p>}
                   {articleDate && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(articleDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
-                  {blocks.map((block, i) => (
-                    <div key={i} style={{ marginBottom: '10px' }}>
-                      {block.type === 'text'
-                        ? <div style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }} dangerouslySetInnerHTML={{ __html: block.html }} />
-                        : block.url && <img src={block.url} alt="" style={{ width: '100%', borderRadius: '6px' }} />
+                  {blocks.map((block, i) => {
+                    const getYouTubeEmbed = (url) => {
+                      try {
+                        const u = new URL(url)
+
+                        if (u.hostname.includes("youtube.com")) {
+                          const id = u.searchParams.get("v")
+                          if (id) return `https://www.youtube.com/embed/${id}`
+                        }
+
+                        if (u.hostname === "youtu.be") {
+                          const id = u.pathname.slice(1)
+                          if (id) return `https://www.youtube.com/embed/${id}`
+                        }
+
+                        return null
+                      } catch {
+                        return null
                       }
-                    </div>
-                  ))}
+                    }
+
+                    const embedUrl = block.type === 'video' ? getYouTubeEmbed(block.url) : null
+
+                    return (
+                      <div key={i} style={{ marginBottom: '10px' }}>
+                        
+                        {block.type === 'text' && (
+                          <div
+                            style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }}
+                            dangerouslySetInnerHTML={{ __html: block.html }}
+                          />
+                        )}
+
+                        {block.type === 'image' && block.url && (
+                          <img
+                            src={block.url}
+                            alt=""
+                            style={{ width: '100%', borderRadius: '6px' }}
+                          />
+                        )}
+
+                        {block.type === 'video' && embedUrl && (
+                          <iframe
+                            src={embedUrl}
+                            style={{
+                              width: '100%',
+                              aspectRatio: '16/9',
+                              borderRadius: '6px',
+                              border: 'none'
+                            }}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
+                        )}
+
+                      </div>
+                    )
+                  })}
+                </div>
+                <div style={{ fontSize: '11px', color: '#aaa', textAlign: 'right', padding: '6px 14px', borderTop: '1px solid #f0f0f0', fontFamily: 'Arial, sans-serif' }}>
+                  {formatStats(englishStats)}
                 </div>
               </div>
-              <div style={{ border: '1px solid #d1e8d1', borderRadius: '10px', background: '#fff', marginBottom: '14px' }}>
+
+              <div style={{ border: '1px solid #d1e8d1', borderRadius: '10px', background: '#fff', marginBottom: '14px', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ padding: '10px 14px 6px', borderBottom: '1px solid #f0f0f0' }}>
                   <div style={styles.label}>{targetLangName} — edit if needed</div>
                 </div>
-                <div style={{ padding: '10px 14px', maxHeight: '360px', overflowY: 'auto' }}>
+                <div style={{ padding: '10px 14px', maxHeight: '360px', overflowY: 'auto', flex: 1 }}>
                   {translatedTitle && <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>{translatedTitle}</h2>}
                   {translatedSubtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{translatedSubtitle}</p>}
                   {articleDate && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(articleDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
@@ -673,19 +907,34 @@ export default function App() {
                     dangerouslySetInnerHTML={{ __html: filipino }}
                   />
                 </div>
+                <div style={{ fontSize: '11px', color: '#aaa', textAlign: 'right', padding: '6px 14px', borderTop: '1px solid #f0f0f0', fontFamily: 'Arial, sans-serif' }}>
+                  {formatStats(translatedStats)}
+                </div>
               </div>
             </div>
 
-            <div style={styles.actions}>
-              <button style={{ ...styles.btnGreen, opacity: isPublishing ? 0.7 : 1, cursor: isPublishing ? 'not-allowed' : 'pointer' }} onClick={approve} disabled={isPublishing}>
-                {isPublishing ? 'Publishing...' : 'Approve and publish'}
-              </button>
-              <button style={styles.btnOutline} onClick={reject} disabled={isPublishing}>Reject</button>
-            </div>
-            {isPublishing && (
-              <div style={{ fontSize: '11px', color: '#aaa', textAlign: 'center', marginTop: '10px' }}>
-                If it takes too long, the backend may be waking up.{' '}
-                <a href="https://newspublish-backend.onrender.com" target="_blank" rel="noreferrer" style={{ color: '#2a7a2a' }}>Click here to wake it up</a>, then come back.
+            {isPublishing ? (
+              <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                <div style={{ fontSize: '13px', color: '#2a7a2a', marginBottom: '16px' }}>Publishing...</div>
+                <div style={{ width: '100%', height: '4px', background: '#e8f5e8', borderRadius: '4px', overflow: 'hidden', marginBottom: '16px' }}>
+                  <div style={{ height: '100%', width: '40%', background: '#1a7a1a', borderRadius: '4px', animation: 'slide 1.5s infinite ease-in-out' }} />
+                </div>
+                <div style={{ fontSize: '11px', color: '#aaa' }}>
+                  If it takes too long, the backend may be waking up.{' '}
+                  <a href="https://newspublish-backend.onrender.com" target="_blank" rel="noreferrer" style={{ color: '#2a7a2a' }}>Click here to wake it up</a>, then come back.
+                </div>
+              </div>
+            ) : (
+              <div style={styles.actions}>
+                <button style={styles.btnGreen} onClick={approve}>Approve and publish</button>
+                <button style={styles.btnOutline} onClick={reject}>Reject</button>
+              </div>
+            )}
+
+            {publishError && !isPublishing && (
+              <div style={{ ...styles.toastErr, marginTop: '10px' }}>
+                Could not publish — {publishErrorMsg || 'the backend may be offline.'}{' '}
+                <a href="https://newspublish-backend.onrender.com" target="_blank" rel="noreferrer" style={{ color: '#b00', fontWeight: '600' }}>Click here to wake up the backend</a>, then try again.
               </div>
             )}
           </div>
@@ -701,14 +950,63 @@ export default function App() {
                   {title && <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>{title}</h2>}
                   {subtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{subtitle}</p>}
                   {articleDate && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(articleDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
-                  {blocks.map((block, i) => (
-                    <div key={i} style={{ marginBottom: '10px' }}>
-                      {block.type === 'text'
-                        ? <div style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }} dangerouslySetInnerHTML={{ __html: block.html }} />
-                        : block.url && <img src={block.url} alt="" style={{ width: '100%', borderRadius: '6px' }} />
+                  {blocks.map((block, i) => {
+                    const getYouTubeEmbed = (url) => {
+                      try {
+                        const u = new URL(url)
+
+                        if (u.hostname.includes("youtube.com")) {
+                          const id = u.searchParams.get("v")
+                          if (id) return `https://www.youtube.com/embed/${id}`
+                        }
+
+                        if (u.hostname === "youtu.be") {
+                          const id = u.pathname.slice(1)
+                          if (id) return `https://www.youtube.com/embed/${id}`
+                        }
+
+                        return null
+                      } catch {
+                        return null
                       }
-                    </div>
-                  ))}
+                    }
+
+                    const embedUrl = block.type === 'video' ? getYouTubeEmbed(block.url) : null
+
+                    return (
+                      <div key={i} style={{ marginBottom: '10px' }}>
+                        {block.type === 'text' && (
+                          <div
+                            style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }}
+                            dangerouslySetInnerHTML={{ __html: block.html }}
+                          />
+                        )}
+
+                        {block.type === 'image' && block.url && (
+                          <img
+                            src={block.url}
+                            alt=""
+                            style={{ width: '100%', borderRadius: '6px' }}
+                          />
+                        )}
+
+                        {block.type === 'video' && embedUrl && (
+                          <iframe
+                            src={embedUrl}
+                            style={{
+                              width: '100%',
+                              aspectRatio: '16/9',
+                              borderRadius: '6px',
+                              border: 'none'
+                            }}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
+                        )}
+                      </div>
+                    )
+                  })}
+                  <div style={styles.wordCountBlock}>{formatStats(englishStats)}</div>
                 </div>
                 <div style={styles.card}>
                   <div style={styles.label}>{targetLangName}</div>
@@ -716,6 +1014,7 @@ export default function App() {
                   {translatedSubtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{translatedSubtitle}</p>}
                   {articleDate && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(articleDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
                   <div className="published-filipino" style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }} dangerouslySetInnerHTML={{ __html: filipino }} />
+                  <div style={styles.wordCountBlock}>{formatStats(translatedStats)}</div>
                 </div>
               </div>
             </div>
@@ -768,14 +1067,65 @@ export default function App() {
                 {selectedArticle.title && <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>{selectedArticle.title}</h2>}
                 {selectedArticle.subtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{selectedArticle.subtitle}</p>}
                 {selectedArticle.article_date && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(selectedArticle.article_date + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
-                {(selectedArticle.blocks || []).map((block, i) => (
-                  <div key={i} style={{ marginBottom: '10px' }}>
-                    {block.type === 'text'
-                      ? <div style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }} dangerouslySetInnerHTML={{ __html: block.html }} />
-                      : block.url && <img src={block.url} alt="" style={{ width: '100%', borderRadius: '6px' }} />
+                {(selectedArticle.blocks || []).map((block, i) => {
+                    const getYouTubeEmbed = (url) => {
+                      try {
+                        const u = new URL(url)
+
+                        if (u.hostname.includes("youtube.com")) {
+                          const id = u.searchParams.get("v")
+                          if (id) return `https://www.youtube.com/embed/${id}`
+                        }
+
+                        if (u.hostname === "youtu.be") {
+                          const id = u.pathname.slice(1)
+                          if (id) return `https://www.youtube.com/embed/${id}`
+                        }
+
+                        return null
+                      } catch {
+                        return null
+                      }
                     }
-                  </div>
-                ))}
+
+                    const embedUrl = block.type === 'video' ? getYouTubeEmbed(block.url) : null
+
+                    return (
+                      <div key={i} style={{ marginBottom: '10px' }}>
+                        
+                        {block.type === 'text' && (
+                          <div
+                            style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }}
+                            dangerouslySetInnerHTML={{ __html: block.html }}
+                          />
+                        )}
+
+                        {block.type === 'image' && block.url && (
+                          <img
+                            src={block.url}
+                            alt=""
+                            style={{ width: '100%', borderRadius: '6px' }}
+                          />
+                        )}
+
+                        {block.type === 'video' && embedUrl && (
+                          <iframe
+                            src={embedUrl}
+                            style={{
+                              width: '100%',
+                              aspectRatio: '16/9',
+                              borderRadius: '6px',
+                              border: 'none'
+                            }}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
+                        )}
+
+                      </div>
+                    )
+                  })}
+                <div style={styles.wordCountBlock}>{formatStats(getArticleStats(selectedArticle.title, selectedArticle.subtitle, selectedArticle.blocks || []))}</div>
               </div>
               <div style={styles.card}>
                 <div style={styles.label}>{selectedArticle.target_lang_name}</div>
@@ -783,6 +1133,7 @@ export default function App() {
                 {selectedArticle.translated_subtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{selectedArticle.translated_subtitle}</p>}
                 {selectedArticle.article_date && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(selectedArticle.article_date + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
                 <div className="published-filipino" style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }} dangerouslySetInnerHTML={{ __html: selectedArticle.translated_html || '' }} />
+                <div style={styles.wordCountBlock}>{formatStats(getTranslatedStats(selectedArticle.translated_title, selectedArticle.translated_subtitle, selectedArticle.translated_html))}</div>
               </div>
             </div>
             <div style={styles.actions}>
