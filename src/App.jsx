@@ -643,7 +643,7 @@ useEffect(() => {
             {loginErr && <div style={styles.toastErr}>Please enter your email and password.</div>}
             <div style={styles.hint}>demo: editor@newsroom.ph / demo123</div>
             <div style={{ textAlign: 'center', marginTop: '8px' }}>
-              <a href="https://docs.google.com/document/d/1U9AcoAyi7o8yjsMaNizcR5kJzDlhN7XJQ1hEaRAzbFY/edit?usp=sharing" target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: '#2a7a2a', display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}>
+              <a href="https://docs.google.com/document/d/1IqrlQRM_Y0yBpPONeIyfPn4hsTw_we_Bph4aAYRLL9k/edit?usp=sharing" target="_blank" rel="noreferrer" style={{ fontSize: '11px', color: '#2a7a2a', display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="#2a7a2a"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM6 20V4h5v7h7v9H6z"/></svg>
                 View design note
               </a>
