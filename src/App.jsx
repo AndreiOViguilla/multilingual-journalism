@@ -117,6 +117,7 @@ export default function App() {
   const [selectedArticle, setSelectedArticle] = useState(null)
   const [editingId, setEditingId] = useState(null)
   const [title, setTitle] = useState('')
+  const [author, setAuthor] = useState('')
   const [subtitle, setSubtitle] = useState('')
   const [articleDate, setArticleDate] = useState(new Date().toISOString().split('T')[0])
   const [filipino, setFilipino] = useState('')
@@ -733,6 +734,13 @@ useEffect(() => {
                   style={{ ...styles.input, width: 'auto', marginBottom: '0', fontSize: '12px', color: '#555' }}
                   value={articleDate}
                   onChange={e => setArticleDate(e.target.value)}
+                />
+                <input
+                  type="text"
+                  style={{ ...styles.input, marginTop: '6px', fontSize: '12px', color: '#555' }}
+                  placeholder="Byline (e.g. By Juan Dela Cruz)"
+                  value={author}
+                  onChange={e => setAuthor(e.target.value)}
                 />
               </div>
               {blocks.map((block, i) => (
