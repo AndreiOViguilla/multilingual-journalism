@@ -82,7 +82,7 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState('')
 
   const [active, setActive] = useState(0)
-  const [view, setView] = useState('writer') // 'writer' | 'history' | 'article'
+  const [view, setView] = useState('writer')
   const [historyList, setHistoryList] = useState([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [selectedArticle, setSelectedArticle] = useState(null)
@@ -105,6 +105,7 @@ export default function App() {
   const [isFilipinoBold, setIsFilipinoBold] = useState(false)
   const [isfilipinoItalic, setIsFilipinoItalic] = useState(false)
   const [activeEditor, setActiveEditor] = useState('english')
+  const [isPublishing, setIsPublishing] = useState(false)
 
   function checkFormat() {
     setIsBold(document.queryCommandState('bold'))
@@ -168,7 +169,6 @@ export default function App() {
     const sel = window.getSelection()
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
     const range = sel.getRangeAt(0)
-
     const span = document.createElement('span')
     span.className = 'no-translate'
     span.setAttribute('data-nt', '1')
@@ -179,7 +179,6 @@ export default function App() {
       return
     }
     sel.removeAllRanges()
-
     if (activeBlock !== null) {
       const el = document.querySelector(`[data-block="${activeBlock}"]`)
       if (el) updateBlock(activeBlock, el.innerHTML)
@@ -190,17 +189,14 @@ export default function App() {
     const sel = window.getSelection()
     if (!sel || sel.rangeCount === 0) return
     const range = sel.getRangeAt(0)
-
     let node = range.commonAncestorContainer
     while (node && node.nodeType === 3) node = node.parentNode
     const existing = node && node.closest ? node.closest('span.no-translate') : null
     if (!existing) return
-
     const parent = existing.parentNode
     while (existing.firstChild) parent.insertBefore(existing.firstChild, existing)
     parent.removeChild(existing)
     sel.removeAllRanges()
-
     if (activeBlock !== null) {
       const el = document.querySelector(`[data-block="${activeBlock}"]`)
       if (el) updateBlock(activeBlock, el.innerHTML)
@@ -247,6 +243,7 @@ export default function App() {
     setHistoryList([])
     setSelectedArticle(null)
     setEditingId(null)
+    setIsPublishing(false)
   }
 
   async function translate() {
@@ -254,7 +251,6 @@ export default function App() {
     if (!textBlocks.some(b => getTextFromHtml(b.html).trim())) return
     setActive(1)
 
-    // Extract no-translate spans, replace with placeholders like __NT0__
     function protect(html) {
       const protected_items = []
       const div = document.createElement('div')
@@ -271,7 +267,6 @@ export default function App() {
     function restore(translatedHtml, items) {
       let result = translatedHtml
       items.forEach((original, idx) => {
-        // Match placeholders even if the translator altered spacing/case
         const re = new RegExp(`_+\\s*N\\s*T\\s*${idx}\\s*_+`, 'gi')
         result = result.replace(re, `<span class="no-translate">${original}</span>`)
       })
@@ -279,13 +274,9 @@ export default function App() {
     }
 
     try {
-      // Include all blocks — text gets translated, images pass through as <img> tags
       const combinedHtml = blocks.map(b => {
-        if (b.type === 'text') {
-          return `<div>${b.html}</div>`
-        } else if (b.type === 'image' && b.url) {
-          return `<div><img src="${b.url}" alt="" /></div>`
-        }
+        if (b.type === 'text') return `<div>${b.html}</div>`
+        else if (b.type === 'image' && b.url) return `<div><img src="${b.url}" alt="" /></div>`
         return ''
       }).join('')
       const protectedBody = protect(combinedHtml)
@@ -340,9 +331,7 @@ export default function App() {
   }
 
   async function approve() {
-    setActive(3)
-    setToast('pub')
-    // Save to MongoDB via backend
+    setIsPublishing(true)
     const payload = {
       title,
       subtitle,
@@ -357,7 +346,6 @@ export default function App() {
     }
     try {
       if (editingId) {
-        // Update existing — delete old and create new (simpler than PATCH)
         await fetch(`${API_URL}/articles/${editingId}`, { method: 'DELETE' })
       }
       const res = await fetch(`${API_URL}/articles`, {
@@ -370,6 +358,9 @@ export default function App() {
     } catch (err) {
       console.warn('Failed to save article:', err)
     }
+    setIsPublishing(false)
+    setActive(3)
+    setToast('pub')
   }
 
   async function loadHistory() {
@@ -411,7 +402,6 @@ export default function App() {
   }
 
   function editArticle(article) {
-    // Load the article back into the Write tab for editing
     setTitle(article.title || '')
     setSubtitle(article.subtitle || '')
     setArticleDate(article.article_date || new Date().toISOString().split('T')[0])
@@ -420,7 +410,6 @@ export default function App() {
     setFilipino(article.translated_html || '')
     setTranslatedTitle(article.translated_title || '')
     setTranslatedSubtitle(article.translated_subtitle || '')
-    // Reload blocks with fresh IDs so EditableBlock re-mounts with new content
     const restoredBlocks = (article.blocks || []).map(b => ({
       id: blockIdCounter.current++,
       type: b.type,
@@ -499,7 +488,6 @@ export default function App() {
 
   return (
     <div style={styles.body}>
-      {/* Global styles for list indentation — applies across all tabs */}
       <style>{`
         ul { padding-left: 20px; margin: 4px 0; }
         li { margin: 2px 0; }
@@ -515,7 +503,9 @@ export default function App() {
             {view === 'writer' ? (
               STEPS.map((s, i) => (
                 <span key={s}>
-                  <span style={stepStyle(i, active)}>{s}</span>
+                  <span style={stepStyle(i, active)}>
+                    {i === 3 && isPublishing ? 'Publishing...' : i === 3 && active === 3 ? 'Published' : s}
+                  </span>
                   {i < STEPS.length - 1 && <span style={styles.sep}> › </span>}
                 </span>
               ))
@@ -545,7 +535,7 @@ export default function App() {
               <button onMouseDown={e => { e.preventDefault(); applyFormat('italic') }} style={{ fontStyle: 'italic', fontSize: '12px', padding: '2px 10px', borderRadius: '4px', border: '1px solid #d1e8d1', background: isItalic ? '#d1e8d1' : '#f9fdf9', cursor: 'pointer', color: '#333' }}>I</button>
               <button onMouseDown={e => { e.preventDefault(); applyBullet() }} style={{ fontSize: '12px', padding: '2px 10px', borderRadius: '4px', border: '1px solid #d1e8d1', background: isList ? '#d1e8d1' : '#f9fdf9', cursor: 'pointer', color: '#333' }}>• List</button>
               <span style={{ width: '1px', height: '16px', background: '#d1e8d1', margin: '0 4px' }} />
-              <button onMouseDown={e => { e.preventDefault(); applyNoTranslate() }} title="Highlight text and click to keep it untranslated (e.g. names, brands)" style={{ fontSize: '12px', padding: '2px 10px', borderRadius: '4px', border: '1px solid #e0c867', background: '#fff8d4', cursor: 'pointer', color: '#8a6a1a' }}>Don't translate</button>
+              <button onMouseDown={e => { e.preventDefault(); applyNoTranslate() }} title="Highlight text and click to keep it untranslated" style={{ fontSize: '12px', padding: '2px 10px', borderRadius: '4px', border: '1px solid #e0c867', background: '#fff8d4', cursor: 'pointer', color: '#8a6a1a' }}>Don't translate</button>
               <button onMouseDown={e => { e.preventDefault(); removeNoTranslate() }} title="Click inside a highlighted section to remove the highlight" style={{ fontSize: '12px', padding: '2px 10px', borderRadius: '4px', border: '1px solid #d1e8d1', background: '#f9fdf9', cursor: 'pointer', color: '#666' }}>Remove highlight</button>
             </div>
 
@@ -577,16 +567,8 @@ export default function App() {
               {blocks.map((block, i) => (
                 <div key={block.id} style={{ marginBottom: '10px', position: 'relative', display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingTop: '2px' }}>
-                    <button
-                      onClick={() => moveBlock(i, -1)}
-                      disabled={i === 0}
-                      style={{ width: '22px', height: '22px', fontSize: '10px', border: '1px solid #d1e8d1', borderRadius: '4px', background: i === 0 ? '#f5f5f5' : '#fff', color: i === 0 ? '#ccc' : '#2a7a2a', cursor: i === 0 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
-                    >▲</button>
-                    <button
-                      onClick={() => moveBlock(i, 1)}
-                      disabled={i === blocks.length - 1}
-                      style={{ width: '22px', height: '22px', fontSize: '10px', border: '1px solid #d1e8d1', borderRadius: '4px', background: i === blocks.length - 1 ? '#f5f5f5' : '#fff', color: i === blocks.length - 1 ? '#ccc' : '#2a7a2a', cursor: i === blocks.length - 1 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
-                    >▼</button>
+                    <button onClick={() => moveBlock(i, -1)} disabled={i === 0} style={{ width: '22px', height: '22px', fontSize: '10px', border: '1px solid #d1e8d1', borderRadius: '4px', background: i === 0 ? '#f5f5f5' : '#fff', color: i === 0 ? '#ccc' : '#2a7a2a', cursor: i === 0 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>▲</button>
+                    <button onClick={() => moveBlock(i, 1)} disabled={i === blocks.length - 1} style={{ width: '22px', height: '22px', fontSize: '10px', border: '1px solid #d1e8d1', borderRadius: '4px', background: i === blocks.length - 1 ? '#f5f5f5' : '#fff', color: i === blocks.length - 1 ? '#ccc' : '#2a7a2a', cursor: i === blocks.length - 1 ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>▼</button>
                   </div>
                   <div style={{ flex: 1, position: 'relative' }}>
                     <span onClick={() => removeBlock(i)} style={{ position: 'absolute', right: '0', top: '0', fontSize: '11px', color: '#aaa', cursor: 'pointer', zIndex: 1 }}>remove</span>
@@ -636,7 +618,7 @@ export default function App() {
             </div>
             <div style={{ fontSize: '11px', color: '#aaa' }}>
               If it takes too long, the backend may be waking up.{' '}
-              <a href="https://translator-backend-0lo3.onrender.com" target="_blank" rel="noreferrer" style={{ color: '#2a7a2a' }}>Click here to wake it up</a>, then come back.
+              <a href="https://newspublish-backend.onrender.com" target="_blank" rel="noreferrer" style={{ color: '#2a7a2a' }}>Click here to wake it up</a>, then come back.
             </div>
           </div>
         )}
@@ -693,10 +675,19 @@ export default function App() {
                 </div>
               </div>
             </div>
+
             <div style={styles.actions}>
-              <button style={styles.btnGreen} onClick={approve}>Approve and publish</button>
-              <button style={styles.btnOutline} onClick={reject}>Reject</button>
+              <button style={{ ...styles.btnGreen, opacity: isPublishing ? 0.7 : 1, cursor: isPublishing ? 'not-allowed' : 'pointer' }} onClick={approve} disabled={isPublishing}>
+                {isPublishing ? 'Publishing...' : 'Approve and publish'}
+              </button>
+              <button style={styles.btnOutline} onClick={reject} disabled={isPublishing}>Reject</button>
             </div>
+            {isPublishing && (
+              <div style={{ fontSize: '11px', color: '#aaa', textAlign: 'center', marginTop: '10px' }}>
+                If it takes too long, the backend may be waking up.{' '}
+                <a href="https://newspublish-backend.onrender.com" target="_blank" rel="noreferrer" style={{ color: '#2a7a2a' }}>Click here to wake it up</a>, then come back.
+              </div>
+            )}
           </div>
         )}
 
