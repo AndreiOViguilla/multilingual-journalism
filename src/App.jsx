@@ -478,6 +478,7 @@ useEffect(() => {
     const payload = {
       title,
       subtitle,
+      author,
       article_date: articleDate,
       blocks: blocks.map(b => ({ type: b.type === 'video' ? 'video' : b.type, html: b.html || '', url: b.url || '' })),
       translated_title: translatedTitle,
@@ -562,6 +563,7 @@ useEffect(() => {
   function editArticle(article) {
     setTitle(article.title || '')
     setSubtitle(article.subtitle || '')
+    setAuthor(article.author || '')
     setArticleDate(article.article_date || new Date().toISOString().split('T')[0])
     setTargetLang(article.target_lang || 'tl')
     setTargetLangName(article.target_lang_name || 'Filipino')
@@ -855,7 +857,17 @@ useEffect(() => {
                 <div style={{ padding: '10px 14px', maxHeight: '360px', overflowY: 'auto', flex: 1 }}>
                   {title && <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>{title}</h2>}
                   {subtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{subtitle}</p>}
-                  {articleDate && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(articleDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
+                  {(author || articleDate) && (
+                    <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>
+                      {author && <span>By {author}</span>}
+                      {author && articleDate && <span> · </span>}
+                      {articleDate && new Date(articleDate + 'T00:00:00').toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </p>
+                  )}
                   {blocks.map((block, i) => {
                     const getYouTubeEmbed = (url) => {
                       try {
@@ -927,7 +939,17 @@ useEffect(() => {
                 <div style={{ padding: '10px 14px', maxHeight: '360px', overflowY: 'auto', flex: 1 }}>
                   {translatedTitle && <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>{translatedTitle}</h2>}
                   {translatedSubtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{translatedSubtitle}</p>}
-                  {articleDate && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(articleDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
+                  {(author || articleDate) && (
+                    <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>
+                      {author && <span>By {author}</span>}
+                      {author && articleDate && <span> · </span>}
+                      {articleDate && new Date(articleDate + 'T00:00:00').toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </p>
+                  )}
                   <div
                     id="filipino-editor"
                     contentEditable
@@ -983,7 +1005,17 @@ useEffect(() => {
                   <div style={styles.label}>English</div>
                   {title && <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>{title}</h2>}
                   {subtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{subtitle}</p>}
-                  {articleDate && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(articleDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
+                  {(author || articleDate) && (
+                    <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>
+                      {author && <span>By {author}</span>}
+                      {author && articleDate && <span> · </span>}
+                      {articleDate && new Date(articleDate + 'T00:00:00').toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </p>
+                  )}
                   {blocks.map((block, i) => {
                     const getYouTubeEmbed = (url) => {
                       try {
@@ -1046,7 +1078,17 @@ useEffect(() => {
                   <div style={styles.label}>{targetLangName}</div>
                   {translatedTitle && <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>{translatedTitle}</h2>}
                   {translatedSubtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{translatedSubtitle}</p>}
-                  {articleDate && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(articleDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
+                  {(author || articleDate) && (
+                    <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>
+                      {author && <span>By {author}</span>}
+                      {author && articleDate && <span> · </span>}
+                      {articleDate && new Date(articleDate + 'T00:00:00').toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </p>
+                  )}
                   <div className="published-filipino" style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }} dangerouslySetInnerHTML={{ __html: filipino }} />
                   <div style={styles.wordCountBlock}>{formatStats(translatedStats)}</div>
                 </div>
@@ -1078,6 +1120,7 @@ useEffect(() => {
                     <span>{new Date(a.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
                     <span>·</span>
                     <span>{a.target_lang_name}</span>
+                    {a.author && <><span>·</span><span>By {a.author}</span></>}
                     {a.author_email && <><span>·</span><span>{a.author_email}</span></>}
                   </div>
                 </div>
@@ -1093,86 +1136,173 @@ useEffect(() => {
         {view === 'article' && selectedArticle && (
           <div>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-              <span onClick={() => { setView('history'); setSelectedArticle(null) }} style={styles.back}>← Back to History</span>
+              <span
+                onClick={() => { setView('history'); setSelectedArticle(null) }}
+                style={styles.back}
+              >
+                ← Back to History
+              </span>
             </div>
+
             <div style={styles.cols}>
+
+              {/* ENGLISH */}
               <div style={styles.card}>
                 <div style={styles.label}>English</div>
-                {selectedArticle.title && <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>{selectedArticle.title}</h2>}
-                {selectedArticle.subtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{selectedArticle.subtitle}</p>}
-                {selectedArticle.article_date && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(selectedArticle.article_date + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
+
+                {selectedArticle.title && (
+                  <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>
+                    {selectedArticle.title}
+                  </h2>
+                )}
+
+                {selectedArticle.subtitle && (
+                  <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>
+                    {selectedArticle.subtitle}
+                  </p>
+                )}
+
+                {/* ✅ FIXED BYLINE */}
+                {(selectedArticle.author || selectedArticle.article_date) ? (
+                  <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>
+                    {selectedArticle.author ? `By ${selectedArticle.author}` : ''}
+                    {selectedArticle.author && selectedArticle.article_date ? ' · ' : ''}
+                    {selectedArticle.article_date
+                      ? new Date(selectedArticle.article_date + 'T00:00:00').toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })
+                      : ''}
+                  </p>
+                ) : null}
+
                 {(selectedArticle.blocks || []).map((block, i) => {
-                    const getYouTubeEmbed = (url) => {
-                      try {
-                        const u = new URL(url)
+                  const getYouTubeEmbed = (url) => {
+                    try {
+                      const u = new URL(url)
 
-                        if (u.hostname.includes("youtube.com")) {
-                          const id = u.searchParams.get("v")
-                          if (id) return `https://www.youtube.com/embed/${id}`
-                        }
-
-                        if (u.hostname === "youtu.be") {
-                          const id = u.pathname.slice(1)
-                          if (id) return `https://www.youtube.com/embed/${id}`
-                        }
-
-                        return null
-                      } catch {
-                        return null
+                      if (u.hostname.includes("youtube.com")) {
+                        const id = u.searchParams.get("v")
+                        if (id) return `https://www.youtube.com/embed/${id}`
                       }
+
+                      if (u.hostname === "youtu.be") {
+                        const id = u.pathname.slice(1)
+                        if (id) return `https://www.youtube.com/embed/${id}`
+                      }
+
+                      return null
+                    } catch {
+                      return null
                     }
+                  }
 
-                    const embedUrl = block.type === 'video' ? getYouTubeEmbed(block.url) : null
+                  const embedUrl = block.type === 'video' ? getYouTubeEmbed(block.url) : null
 
-                    return (
-                      <div key={i} style={{ marginBottom: '10px' }}>
-                        
-                        {block.type === 'text' && (
-                          <div
-                            style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }}
-                            dangerouslySetInnerHTML={{ __html: block.html }}
-                          />
-                        )}
+                  return (
+                    <div key={i} style={{ marginBottom: '10px' }}>
 
-                        {block.type === 'image' && block.url && (
-                          <img
-                            src={block.url}
-                            alt=""
-                            style={{ width: '100%', borderRadius: '6px' }}
-                          />
-                        )}
+                      {block.type === 'text' && (
+                        <div
+                          style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }}
+                          dangerouslySetInnerHTML={{ __html: block.html }}
+                        />
+                      )}
 
-                        {block.type === 'video' && embedUrl && (
-                          <iframe
-                            src={embedUrl}
-                            style={{
-                              width: '100%',
-                              aspectRatio: '16/9',
-                              borderRadius: '6px',
-                              border: 'none'
-                            }}
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                          />
-                        )}
+                      {block.type === 'image' && block.url && (
+                        <img
+                          src={block.url}
+                          alt=""
+                          style={{ width: '100%', borderRadius: '6px' }}
+                        />
+                      )}
 
-                      </div>
-                    )
-                  })}
-                <div style={styles.wordCountBlock}>{formatStats(getArticleStats(selectedArticle.title, selectedArticle.subtitle, selectedArticle.blocks || []))}</div>
+                      {block.type === 'video' && embedUrl && (
+                        <iframe
+                          src={embedUrl}
+                          style={{
+                            width: '100%',
+                            aspectRatio: '16/9',
+                            borderRadius: '6px',
+                            border: 'none'
+                          }}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      )}
+
+                    </div>
+                  )
+                })}
+
+                <div style={styles.wordCountBlock}>
+                  {formatStats(getArticleStats(
+                    selectedArticle.title,
+                    selectedArticle.subtitle,
+                    selectedArticle.blocks || []
+                  ))}
+                </div>
               </div>
+
+              {/* FILIPINO */}
               <div style={styles.card}>
                 <div style={styles.label}>{selectedArticle.target_lang_name}</div>
-                {selectedArticle.translated_title && <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>{selectedArticle.translated_title}</h2>}
-                {selectedArticle.translated_subtitle && <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>{selectedArticle.translated_subtitle}</p>}
-                {selectedArticle.article_date && <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>{new Date(selectedArticle.article_date + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>}
-                <div className="published-filipino" style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }} dangerouslySetInnerHTML={{ __html: selectedArticle.translated_html || '' }} />
-                <div style={styles.wordCountBlock}>{formatStats(getTranslatedStats(selectedArticle.translated_title, selectedArticle.translated_subtitle, selectedArticle.translated_html))}</div>
+
+                {selectedArticle.translated_title && (
+                  <h2 style={{ fontWeight: '700', fontSize: '18px', marginBottom: '4px', color: '#333', marginTop: 0 }}>
+                    {selectedArticle.translated_title}
+                  </h2>
+                )}
+
+                {selectedArticle.translated_subtitle && (
+                  <p style={{ fontSize: '13px', color: '#666', marginBottom: '6px', lineHeight: '1.5' }}>
+                    {selectedArticle.translated_subtitle}
+                  </p>
+                )}
+
+                {/* ✅ SAME BYLINE HERE */}
+                {(selectedArticle.author || selectedArticle.article_date) ? (
+                  <p style={{ fontSize: '11px', color: '#999', marginBottom: '12px' }}>
+                    {selectedArticle.author ? `By ${selectedArticle.author}` : ''}
+                    {selectedArticle.author && selectedArticle.article_date ? ' · ' : ''}
+                    {selectedArticle.article_date
+                      ? new Date(selectedArticle.article_date + 'T00:00:00').toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })
+                      : ''}
+                  </p>
+                ) : null}
+
+                <div
+                  className="published-filipino"
+                  style={{ fontSize: '13px', color: '#333', lineHeight: '1.6' }}
+                  dangerouslySetInnerHTML={{ __html: selectedArticle.translated_html || '' }}
+                />
+
+                <div style={styles.wordCountBlock}>
+                  {formatStats(getTranslatedStats(
+                    selectedArticle.translated_title,
+                    selectedArticle.translated_subtitle,
+                    selectedArticle.translated_html
+                  ))}
+                </div>
               </div>
+
             </div>
+
             <div style={styles.actions}>
-              <button style={styles.btnGreen} onClick={() => editArticle(selectedArticle)}>Edit article</button>
-              <button style={{ ...styles.btnOutline, borderColor: '#b00', color: '#b00' }} onClick={() => deleteArticle(selectedArticle.id)}>Delete article</button>
+              <button style={styles.btnGreen} onClick={() => editArticle(selectedArticle)}>
+                Edit article
+              </button>
+              <button
+                style={{ ...styles.btnOutline, borderColor: '#b00', color: '#b00' }}
+                onClick={() => deleteArticle(selectedArticle.id)}
+              >
+                Delete article
+              </button>
             </div>
           </div>
         )}
